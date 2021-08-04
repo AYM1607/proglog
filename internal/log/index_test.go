@@ -11,7 +11,7 @@ import (
 
 func TestIndex(t *testing.T) {
 	// Create a temp file.
-	f, err := ioutil.TempFile(os.TempDir(), "index_tes")
+	f, err := ioutil.TempFile("", "index_tes")
 	require.NoError(t, err)
 	defer os.Remove(f.Name())
 
