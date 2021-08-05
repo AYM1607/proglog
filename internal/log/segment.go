@@ -52,7 +52,7 @@ func newSegment(dir string, baseOffset uint64, c Config) (*segment, error) {
 	}
 
 	// If Read(-1) returns an error it means that the index's underlying file
-	// and this itself is empty.
+	// and thus itself is empty.
 	if off, _, err := s.index.Read(-1); err != nil {
 		s.nextOffset = baseOffset
 	} else {
@@ -138,6 +138,7 @@ func (s *segment) Remove() error {
 // nearestMultiple returns the nearest and lesser multiple of k in j.
 // example: nearestMultiple(9, 4) = 8
 func nearestMultiple(j, k uint64) uint64 {
+	// This code comes from the book. is this check necessary since the passed values are uint64?
 	if j >= 0 {
 		return (j / k) * k
 	}

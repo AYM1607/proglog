@@ -67,7 +67,7 @@ func (s *httpServer) handleProduce(w http.ResponseWriter, r *http.Request) {
 	}
 
 	res := ProduceResponse{Offset: off}
-	// The header gets overrided if there's an encoding error.
+	// The header gets overwritten if there's an encoding error.
 	w.WriteHeader(http.StatusCreated)
 	err = json.NewEncoder(w).Encode(res)
 	if err != nil {
