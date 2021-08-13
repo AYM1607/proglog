@@ -7,10 +7,12 @@ import (
 	"testing"
 
 	api "github.com/AYM1607/proglog/api/v1"
+	"github.com/AYM1607/proglog/internal/auth"
 	"github.com/AYM1607/proglog/internal/config"
 	"github.com/AYM1607/proglog/internal/log"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/status"
 )
@@ -25,6 +27,7 @@ func TestServer(t *testing.T) {
 		"produce/consume a message to/from the log succeeds": testProduceConsume,
 		"produce/consume stream succeeds":                    testProduceConsumeStream,
 		"consume past a log boundary fails":                  testConsumePastBoundary,
+		"unauthorized fails":                                 testUnauthorized,
 	} {
 		t.Run(scenario, func(t *testing.T) {
 			rootClient,
@@ -96,8 +99,10 @@ func setupTest(t *testing.T, fn func(*Config)) (
 	clog, err := log.NewLog(dir, log.Config{})
 	require.NoError(t, err)
 
+	authorizer := auth.New(config.ACLModelFile, config.ACLPolicyFile)
 	cfg = &Config{
-		CommitLog: clog,
+		CommitLog:  clog,
+		Authorizer: authorizer,
 	}
 	if fn != nil {
 		fn(cfg)
@@ -218,4 +223,33 @@ func testProduceConsumeStream(
 			}, res.Record)
 		}
 	}
+}
+
+func testUnauthorized(
+	t *testing.T,
+	_,
+	client api.LogClient,
+	config *Config,
+) {
+	ctx := context.Background()
+
+	produce, err := client.Produce(ctx,
+		&api.ProduceRequest{
+			Record: &api.Record{
+				Value: []byte("hello world"),
+			},
+		},
+	)
+	require.Nil(t, produce, "produce response should be nil")
+	gotCode, wantCode := status.Code(err), codes.PermissionDenied
+	require.Equal(t, wantCode, gotCode,
+		"produce error code when client is unauthorized should be permission denied")
+
+	consume, err := client.Consume(ctx, &api.ConsumeRequest{
+		Offset: 0,
+	})
+	require.Nil(t, consume, "consume response should be nil")
+	gotCode, wantCode = status.Code(err), codes.PermissionDenied
+	require.Equal(t, wantCode, gotCode,
+		"consume error code when client is unauthorized should be permission denied")
 }
