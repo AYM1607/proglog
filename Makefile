@@ -21,6 +21,7 @@ gencert:
 		-ca-key=ca-key.pem \
 		-config=certs/ca-config.json \
 		-profile=client \
+		-cn="root" \
 		certs/client-csr.json | cfssljson -bare root-client
 	
 	cfssl gencert \
@@ -28,6 +29,7 @@ gencert:
 		-ca-key=ca-key.pem \
 		-config=certs/ca-config.json \
 		-profile=client \
+		-cn="nobody" \
 		certs/client-csr.json | cfssljson -bare nobody-client
 	
 	mv *.pem *.csr $(CONFIG_PATH)
