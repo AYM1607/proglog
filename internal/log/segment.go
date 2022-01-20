@@ -1,0 +1,127 @@
+package log
+
+import (
+	"fmt"
+	"os"
+	"path"
+
+	api "github.com/AYM1607/proglog/api/v1"
+	"google.golang.org/protobuf/proto"
+)
+
+type segment struct {
+	store      *store
+	index      *index
+	baseOffset uint64 // Absolute offset.
+	nextOffset uint64 // Absolute offset.
+	config     Config
+}
+
+func newSegment(dir string, baseOffset uint64, c Config) (*segment, error) {
+	s := &segment{
+		baseOffset: baseOffset,
+		config:     c,
+	}
+	storeF, err := os.OpenFile(
+		path.Join(dir, fmt.Sprintf("%d%s", baseOffset, ".store")),
+		os.O_RDWR|os.O_CREATE|os.O_APPEND,
+		0644,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if s.store, err = newStore(storeF); err != nil {
+		return nil, err
+	}
+
+	indexF, err := os.OpenFile(
+		path.Join(dir, fmt.Sprintf("%d%s", baseOffset, ".index")),
+		os.O_RDWR|os.O_CREATE,
+		0644,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if s.index, err = newIndex(indexF, c); err != nil {
+		return nil, err
+	}
+
+	// Determine the next offset by getting the last element in the index.
+	// The `Read` call will return an error if the index is empty.
+	off, _, err := s.index.Read(-1)
+	if err != nil {
+		s.nextOffset = s.baseOffset
+	} else {
+		s.nextOffset = s.baseOffset + uint64(off) + 1
+	}
+
+	return s, nil
+}
+
+func (s *segment) Append(record *api.Record) (offset uint64, err error) {
+	recordOff := s.nextOffset
+
+	// Write record to the store.
+	record.Offset = recordOff
+	p, err := proto.Marshal(record)
+	if err != nil {
+		return 0, err
+	}
+	_, pos, err := s.store.Append(p)
+	if err != nil {
+		return 0, nil
+	}
+
+	// Write record's position to the index.
+	if err = s.index.Write(
+		// Index's offsets are relative.
+		uint32(recordOff-s.baseOffset),
+		pos,
+	); err != nil {
+		return 0, err
+	}
+	s.nextOffset++
+	return recordOff, nil
+}
+
+func (s *segment) Read(off uint64) (*api.Record, error) {
+	_, pos, err := s.index.Read(int64(off - s.baseOffset))
+	if err != nil {
+		return nil, err
+	}
+	p, err := s.store.Read(pos)
+	if err != nil {
+		return nil, err
+	}
+	record := &api.Record{}
+	err = proto.Unmarshal(p, record)
+	return record, err
+}
+
+func (s *segment) IsMaxed() bool {
+	return s.store.size >= s.config.Segment.MaxStoreBytes ||
+		s.index.size >= s.config.Segment.MaxIndexBytes
+}
+
+func (s *segment) Close() error {
+	if err := s.index.Close(); err != nil {
+		return err
+	}
+	if err := s.store.Close(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *segment) Remove() error {
+	if err := s.Close(); err != nil {
+		return err
+	}
+	if err := os.Remove(s.store.Name()); err != nil {
+		return err
+	}
+	if err := os.Remove(s.index.Name()); err != nil {
+		return err
+	}
+	return nil
+}
